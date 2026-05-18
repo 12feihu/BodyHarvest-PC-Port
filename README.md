@@ -9,6 +9,10 @@ copy of the Body Harvest US ROM.
 
 ## What this is
 
+In Short: A very messy and cluttered project. It's not meant to be "THE" PC port, It's meant to give others a starting point. "My port walked so yours can run"
+It is accidentally the most accurate documentation due to trial and error.
+
+Full:
 A research + tooling project built on top of
 [N64Recomp](https://github.com/N64Recomp/N64Recomp) +
 [N64ModernRuntime](https://github.com/N64Recomp/N64ModernRuntime) +
