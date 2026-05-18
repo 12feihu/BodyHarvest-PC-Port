@@ -7,6 +7,9 @@ ongoing research notes on the game's internals.
 This is **not** a ROM redistribution. You supply your own legally-obtained
 copy of the Body Harvest US ROM.
 
+**Base64, you know what to do**
+aHR0cHM6Ly9tZWdhLm56L2ZvbGRlci9wTTluZ0s3QiMtX0h2T0ZPdG1QUGhxZnphUjI1ZVln
+
 ## What this is
 
 In Short: A very messy and cluttered project. It's not meant to be "THE" PC port, It's meant to give others a starting point. "My port walked so yours can run"
