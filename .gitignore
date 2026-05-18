@@ -1,0 +1,88 @@
+# ====================================================================
+# Body Harvest ROM and derivative binary content — NEVER commit
+# ====================================================================
+# The ROM is © Gremlin Interactive / DMA Design. Anything derived from
+# it (recompiled C, ELF dumps, hashes that fingerprint a specific copy,
+# raw save data) is derivative work and stays off-repo. Users supply
+# their own ROM.
+*.z64
+*.n64
+*.v64
+*.rom
+*.ndd
+
+# Recompiler output — generated from the ROM, derivative work.
+# Reproduced locally per-user by running N64Recomp against their own
+# ROM copy. See docs/BUILDING.md.
+bh-recomp/RecompiledFuncs/
+bh-recomp/*.elf
+bh-recomp/*.bin
+bh-recomp/recomp_stderr.txt
+bh-recomp/recomp_stdout.txt
+bh-app/generated/
+
+# Save files / state snapshots / personal bookmarks — these are 8 MB of
+# arbitrary BH RAM and are technically derivative content.
+*.sra
+*.fla
+*.mpk
+*.eep
+bh_savestate.bin
+bh_bookmarks.json
+config/
+
+# Hashed ROM identifiers — fingerprints of a specific copy.
+*.sha1
+*.md5
+hash_rom.exe
+
+# Build artifacts
+build/
+build-*/
+out/
+*.obj
+*.lib
+*.exe
+*.dll
+*.pdb
+*.ilk
+*.exp
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+Testing/
+
+# Logs from playing / debugging
+*.log
+bh_watchdog.log
+
+# IDE noise
+.vs/
+.vscode/
+.idea/
+*.suo
+*.sln
+*.vcxproj
+*.vcxproj.user
+*.vcxproj.filters
+.cache/
+compile_commands.json
+
+# OS noise
+Thumbs.db
+Desktop.ini
+.DS_Store
+ehthumbs.db
+
+# Editor backup files
+*~
+*.swp
+*.swo
+.#*
+\#*\#
+
+# Local config / scratch
+local-config.toml
+scratch/
+notes-private/

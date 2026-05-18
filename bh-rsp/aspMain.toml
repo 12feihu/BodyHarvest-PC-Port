@@ -1,0 +1,51 @@
+# RSPRecomp config for Body Harvest's aspMain audio microcode.
+#
+# IMEM layout (deduced by disassembling BH's rspboot at ROM 0x2EA10):
+#
+#   IMEM 0x000-0x07F : rspboot (loaded by the OS scheduler, before SP runs)
+#   IMEM 0x080-0xFFF : aspMain (DMA'd here by rspboot, length 0xF80)
+#
+# rspboot ends with `jr $r7` where r7 = 0x1080, so aspMain's entry is at
+# IMEM 0x1080 — NOT IMEM 0x1000 like we initially assumed. With the wrong
+# text_address all the L_<addr> labels were misaligned by 0x80, and the
+# dispatch values in BH's static DMEM table (0xA000/0xC000/0xE000 at DMEM
+# 0xB8) — which the RSP `jr` masks to PC 0x000 (= rspboot land = "exit
+# ucode") — were instead routing back to our recompiled aspMain entry and
+# infinite-looping.
+#
+# aspMain location in BH's US ROM (from src.us/core/1050.c line 168):
+#   ucode      = D_8002F310_2FF10  -> ROM 0x2FF10  (= IMEM 0x1080)
+#   ucode_data = D_8003F060_3FC60  -> ROM 0x3FC60  (DMA'd to DMEM[0..0x7FF])
+# librecomp's run_task already handles the DMEM ucode_data load; rspboot's
+# job — DMA aspMain into IMEM + r1=0xFC0 setup — is what aspMain's emitted
+# preamble (r1 = 0xFC0) substitutes for.
+
+text_offset = 0x2FF10
+text_size = 0xF80
+text_address = 0x04001080
+rom_file_path = "../../body-harvest-decompilation/build/bh.us.z64"
+output_file_path = "aspMain.cpp"
+output_function_name = "aspMain"
+
+# Indirect-branch targets seeded from Zelda64Recomp's MM aspMain.us.rev1.toml
+# and shifted by +0x80 to match BH's IMEM layout. Plus 0x1F80 (BH's audio
+# command dispatcher inside the [0x1080, 0x2000) range).
+extra_indirect_branch_targets = [
+    0x1F80, 0x12D0, 0x11D4, 0x1114, 0x1E8C, 0x1594, 0x1EFC, 0x1D10,
+    0x1200, 0x1888, 0x1268, 0x1B5C, 0x1BEC, 0x1214, 0x1F78, 0x12C0,
+    0x1840, 0x18EC, 0x1AD8, 0x193C, 0x1B3C, 0x1B4C, 0x1B00, 0x1C54,
+    # Phase 11: BH's audio command dispatcher reads handler addresses out
+    # of DMEM[0x10..0x2F] (loaded from ucode_data ROM 0x3FC60). Each pair
+    # is `(opcode * 2 -> handler IMEM address)`. The full table:
+    #   DMEM[0x10] 0x1118  DMEM[0x12] 0x1470  DMEM[0x14] 0x11DC  DMEM[0x16] 0x1B38
+    #   DMEM[0x18] 0x1214  DMEM[0x1A] 0x187C  DMEM[0x1C] 0x1254  DMEM[0x1E] 0x12D0
+    #   DMEM[0x20] 0x12EC  DMEM[0x22] 0x1328  DMEM[0x24] 0x140C  DMEM[0x26] 0x1294
+    #   DMEM[0x28] 0x1E24  DMEM[0x2A] 0x138C  DMEM[0x2C] 0x170C  DMEM[0x2E] 0x144C
+    # RSPRecomp's flow analysis misses these because the dispatch is via
+    # `jr` against a halfword loaded from a fixed DMEM offset — the
+    # recompiler can't see across that data-driven branch without a hint.
+    # MM's aspMain.us.rev1.toml seeds a different set; seed BH's full
+    # table here, including duplicates with the MM list (RSPRecomp dedupes).
+    0x1118, 0x1470, 0x11DC, 0x1B38, 0x1214, 0x187C, 0x1254, 0x12D0,
+    0x12EC, 0x1328, 0x140C, 0x1294, 0x1E24, 0x138C, 0x170C, 0x144C,
+]

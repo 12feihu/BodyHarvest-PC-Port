@@ -1,0 +1,88 @@
+# N64Recomp config for Body Harvest (US, NTSC)
+# Paths are relative to this file's directory.
+
+[input]
+# Entry point per bh.us.yaml: .core starts at VRAM 0x80000400 ROM 0x1000.
+# The libultra boot stub jumps to the entrypoint after copying the boot segment.
+entrypoint = 0x80000400
+
+# Drive the recompiler from the decomp's built ELF (has full symbols + sections).
+elf_path = "bh.us.sized.elf"
+
+# The ROM is still needed: BH does PI DMAs from ROM at runtime to load overlays
+# and level data, and the runtime mmaps the ROM image to satisfy those reads.
+rom_file_path = "../../body-harvest-decompilation/build/bh.us.z64"
+
+# Overlay sections (sections that share VRAM with another section).
+relocatable_sections_path = "overlays.us.txt"
+
+# Output directory for generated C files.
+output_func_path = "RecompiledFuncs"
+
+# Tune output granularity; 50 funcs per .c keeps compile times sane.
+functions_per_output_file = 50
+
+# BH is built with IDO 5.3 + libultra 2.0I — uses MIPS3 doubles.
+uses_mips3_float_mode = true
+
+[patches]
+# Functions to stub out (replace bodies with empty no-ops). These are
+# libultra-adjacent helpers that can't be statically analyzed cleanly
+# (e.g. they branch into neighboring functions' code as hand-coded asm
+# shortcuts). The N64ModernRuntime reimplements the surrounding kernel,
+# so empty stubs here are safe placeholders.
+stubs = [
+    # Anonymous helper between __osException and __osEnqueueAndYield;
+    # backward-branches into __osException's body.
+    "func_800235E4_241E4",
+    # Audio sequencer helper; couldn't be analyzed.
+    "alSynSetPriority",
+]
+
+# Functions that should NOT be recompiled (the recomp output would crash on
+# direct MMIO access) but DO need to be callable from other recompiled
+# functions. With `ignored`, N64Recomp skips emitting a body entirely, and
+# we provide the implementation in bh_stubs.cpp (forwarding to the matching
+# ultramodern / librecomp reimplementation). gen_recomp_extras.py emits the
+# forward declaration so the recompiled .c files still compile.
+ignored = [
+    # BH's hand-coded `osAiGetLength` (reads AI_LEN_REG at 0xA4500004
+    # directly). bh_stubs.cpp forwards it to osAiGetLength_recomp which
+    # tracks our PC-side audio buffer state.
+    "func_8001BCE0_1C8E0",
+    # BH's hand-coded `__osPiGetStatus` (reads PI_STATUS_REG at 0xA4600010).
+    # 3-instr leaf: `lui $t6, 0xA460; jr $ra; lw $v0, 0x10($t6)`. PI is
+    # never busy on PC; bh_stubs.cpp returns 0.
+    "func_8001F6E0_202E0",
+    # BH's hand-coded `osEepromLongRead` (asm/1E1A0.s). Real N64 needs
+    # the 15-ms-per-block timer loop because EEPROM's internal cycle is
+    # slow; on PC the read is instantaneous, but the recompiled timer
+    # path stalls our cooperative scheduler at boot. bh_stubs.cpp
+    # forwards to a one-shot save_read that handles BH's unaligned
+    # 0x1BD-byte calls (librecomp's osEepromLongRead_recomp asserts
+    # nbytes % 8 == 0 which BH violates).
+    "func_8001D5A0_1E1A0",
+    # Entity bounding-box cull (decomp 7F220.c:59). Original returns 1
+    # if the entity is inside a ~15x15-tile bbox around the camera, 0
+    # otherwise. We replace it with a configurable version in
+    # bh_cheats.cpp so the "Render all entities" cheat can extend or
+    # disable the cull. Linker needs only one definition; with this in
+    # `ignored` N64Recomp skips emitting a body and our override is
+    # the only `func_800703B0_7F360` symbol. If you re-regen the recomp
+    # output, this entry keeps the no-body behaviour automatic — the
+    # `#if 0` stub in funcs_48.c is a one-time manual edit for builds
+    # that haven't regenerated yet.
+    "func_800703B0_7F360",
+    # Terrain line-of-sight occlusion test (decomp F7870.c:80). The
+    # vehicle render function uses it to skip rendering entities whose
+    # LOS from the camera passes through terrain ("hidden behind a
+    # hill"). For distant entities the long ray almost always finds
+    # something tall enough to occlude, which is the *real* cause of
+    # the "entities vanish at terrain horizon" symptom — not the bbox
+    # cull, not the FOV frustum, not the GPU far plane. Our override
+    # in bh_cheats.cpp gates returning 0 (never occluded) behind the
+    # render-distance bypass flag. Same #if 0 stub in funcs_39.c.
+    "func_800E95BC_F856C",
+]
+
+# (the previous `ignored` array above is the canonical one)

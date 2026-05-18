@@ -1,0 +1,1380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>BH Terrain Editor</title>
+<style>
+:root {
+  --bg: #1c1f24;
+  --bg2: #262a31;
+  --bg3: #2f343c;
+  --fg: #d6d8dc;
+  --fg-dim: #8a9099;
+  --accent: #6aa9ff;
+  --accent-dim: #406fb8;
+  --ok: #4caf50;
+  --warn: #ff9800;
+  --err: #f44336;
+  --border: #3a3f48;
+}
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font: 13px/1.4 system-ui, "Segoe UI", Roboto, sans-serif;
+  overflow: hidden;
+}
+#app {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  grid-template-columns: 280px 1fr;
+  grid-template-areas:
+    "top top"
+    "side canvas"
+    "status status";
+  height: 100%;
+}
+header {
+  grid-area: top;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 12px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+header h1 {
+  margin: 0 12px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--accent);
+}
+header .meta {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--fg-dim);
+}
+button, label.btn {
+  background: var(--bg3);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 10px;
+  cursor: pointer;
+  font: inherit;
+}
+button:hover, label.btn:hover {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+}
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+button.primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+button.primary:hover {
+  background: var(--accent-dim);
+}
+input[type="file"] { display: none; }
+
+aside {
+  grid-area: side;
+  background: var(--bg2);
+  border-right: 1px solid var(--border);
+  padding: 12px;
+  overflow-y: auto;
+}
+aside h2 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fg-dim);
+  margin: 16px 0 6px 0;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 3px;
+}
+aside h2:first-child { margin-top: 0; }
+aside .row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0;
+}
+aside .row label {
+  flex: 1;
+  font-size: 12px;
+}
+aside select, aside input[type="number"], aside input[type="range"] {
+  background: var(--bg3);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 3px 6px;
+  font: inherit;
+}
+aside select, aside input[type="number"] { width: 100px; }
+aside input[type="range"] { width: 110px; }
+aside .info {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 12px;
+  background: var(--bg);
+  padding: 8px;
+  border-radius: 4px;
+  margin-top: 6px;
+  white-space: pre;
+  color: var(--fg-dim);
+  min-height: 80px;
+}
+aside .info b { color: var(--fg); }
+
+main {
+  grid-area: canvas;
+  background: var(--bg);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#drop-hint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  color: var(--fg-dim);
+  font-size: 18px;
+  text-align: center;
+  padding: 40px;
+}
+#canvas-wrap {
+  position: relative;
+  background: #0a0a0a;
+  box-shadow: 0 0 0 1px var(--border), 0 8px 32px rgba(0,0,0,0.6);
+  display: none;
+}
+#canvas-wrap.ready { display: block; }
+canvas {
+  display: block;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  cursor: crosshair;
+}
+#overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+footer {
+  grid-area: status;
+  background: var(--bg2);
+  border-top: 1px solid var(--border);
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--fg-dim);
+  display: flex;
+  gap: 16px;
+}
+footer .msg.ok   { color: var(--ok); }
+footer .msg.warn { color: var(--warn); }
+footer .msg.err  { color: var(--err); }
+footer .right { margin-left: auto; }
+
+.drag-over #app::after {
+  content: "Drop a .json terrain or .png heightmap";
+  position: fixed;
+  inset: 12px;
+  border: 3px dashed var(--accent);
+  border-radius: 12px;
+  background: rgba(106, 169, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  color: var(--accent);
+  z-index: 9999;
+  pointer-events: none;
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>BH Terrain Editor</h1>
+    <label class="btn" for="json-load">Open JSON</label>
+    <input type="file" id="json-load" accept=".json,application/json">
+    <button id="json-save" disabled>Save JSON</button>
+    <label class="btn" for="png-import">Import PNG</label>
+    <input type="file" id="png-import" accept="image/png,image/*">
+    <button id="png-export" disabled>Export PNG</button>
+    <button id="new-flat" title="New flat terrain (all zero) targeted at the current level">New flat</button>
+    <label class="btn" for="entities-load" title="Load a BHENTITIES JSON exported from the in-game Options tab to overlay buildings/vehicles/aliens/beacons">Load entities</label>
+    <input type="file" id="entities-load" accept=".json,application/json">
+    <button id="entities-clear" disabled title="Remove the loaded entity overlay">Clear entities</button>
+    <span class="meta" id="meta">— no file loaded —</span>
+  </header>
+
+  <aside>
+    <h2>View</h2>
+    <div class="row">
+      <label for="palette">Palette</label>
+      <select id="palette">
+        <option value="terrain" selected>Terrain (color)</option>
+        <option value="gray">Grayscale</option>
+        <option value="contour">Contour bands</option>
+        <option value="state">State bits (overlay)</option>
+        <option value="texture">Texture bits (hue)</option>
+      </select>
+    </div>
+    <div class="row">
+      <label for="zoom">Zoom</label>
+      <input type="range" id="zoom" min="1" max="6" step="1" value="2">
+      <span id="zoom-label" style="width: 24px; text-align: right;">2x</span>
+    </div>
+    <div class="row">
+      <label for="grid">Map grid (A1-H8)</label>
+      <input type="checkbox" id="grid" checked>
+    </div>
+    <div class="row">
+      <label for="show-walls">Shield walls (bbox)</label>
+      <input type="checkbox" id="show-walls" checked>
+    </div>
+    <div class="row">
+      <label for="show-gates-in-walls">Wall gate openings</label>
+      <input type="checkbox" id="show-gates-in-walls" checked>
+    </div>
+    <div class="row">
+      <label for="show-portals">Shield portals (gates)</label>
+      <input type="checkbox" id="show-portals" checked>
+    </div>
+    <div class="row">
+      <label for="show-buildings">Buildings</label>
+      <input type="checkbox" id="show-buildings" checked>
+    </div>
+    <div class="row">
+      <label for="show-vehicles">Vehicles</label>
+      <input type="checkbox" id="show-vehicles" checked>
+    </div>
+    <div class="row">
+      <label for="show-aliens">Aliens</label>
+      <input type="checkbox" id="show-aliens" checked>
+    </div>
+    <div class="row">
+      <label for="show-beacons">Save beacons</label>
+      <input type="checkbox" id="show-beacons" checked>
+    </div>
+
+    <h2>Brush</h2>
+    <div class="row">
+      <label for="tool">Tool</label>
+      <select id="tool">
+        <option value="paint" selected>Paint height</option>
+        <option value="raise">Raise (+)</option>
+        <option value="lower">Lower (-)</option>
+        <option value="smooth">Smooth (3x3 avg)</option>
+        <option value="sample">Sample (eyedropper)</option>
+      </select>
+    </div>
+    <div class="row">
+      <label for="brush-size">Brush radius</label>
+      <input type="range" id="brush-size" min="0" max="16" step="1" value="2">
+      <span id="brush-size-label" style="width: 24px; text-align: right;">2</span>
+    </div>
+    <div class="row">
+      <label for="brush-h">Paint height (0-63)</label>
+      <input type="number" id="brush-h" min="0" max="63" step="1" value="16" style="width: 70px;">
+    </div>
+    <div class="row">
+      <label for="brush-h-slider"></label>
+      <input type="range" id="brush-h-slider" min="0" max="63" step="1" value="16" style="width: 100%; flex: 1;">
+    </div>
+    <div class="row">
+      <label>Right-click = sample</label>
+    </div>
+
+    <h2>Cursor</h2>
+    <div class="info" id="cursor-info">(hover the canvas)</div>
+
+    <h2>Bulk</h2>
+    <div class="row">
+      <button id="op-smooth" style="flex: 1;">Smooth all</button>
+      <button id="op-undo" style="flex: 1;">Undo</button>
+    </div>
+    <div class="row">
+      <button id="op-flatten" style="flex: 1;">Flatten all to brush height</button>
+    </div>
+  </aside>
+
+  <main>
+    <div id="drop-hint">
+      Drag a <b>.json</b> terrain file here<br>or click <b>Open JSON</b> above.<br><br>
+      <span style="font-size: 13px;">You can also drop a <b>.png</b> heightmap to load grayscale values<br>(auto-resized to 256&times;256, white = peak, black = sea).</span>
+    </div>
+    <div id="canvas-wrap">
+      <canvas id="cv" width="256" height="256"></canvas>
+      <canvas id="overlay" width="256" height="256"></canvas>
+    </div>
+  </main>
+
+  <footer>
+    <span id="status">Ready. Open a terrain .json (exported from the in-game Cheats menu) to begin.</span>
+    <span class="right" id="dirty"></span>
+  </footer>
+</div>
+
+<script>
+"use strict";
+
+// ============================================================================
+// Body Harvest terrain JSON editor.
+//
+// File format (matches what bh_app.exe writes/reads):
+//   {
+//     "magic": "BHTERRAIN",
+//     "version": 1,
+//     "level": 1..5,
+//     "level_name": "Greece" | "Java" | "America" | "Siberia" | "Comet",
+//     "width": 256, "height": 256,
+//     "tiles_hex": "0000002100340021..."   // 256*256 u16s, 4 hex chars each
+//   }
+//
+// Each tile u16 layout (per body-harvest-decompilation/src.us/...):
+//   bits 0-5   height (0=sea, 63=peak; in-game world Y = height * 32)
+//   bits 6-9   state flags (pit/wall/water markers; per-level meanings)
+//   bits 10-15 texture/type indices (per-level material set)
+//
+// All edits round-trip through the same hex string. The "bit plane" view
+// modes let you preview each layer independently; the paint tool only
+// touches height bits unless you switch the bit plane.
+// ============================================================================
+
+const W = 256, H = 256;
+const MAGIC = "BHTERRAIN";
+const VERSION = 1;
+const LEVEL_NAMES = ["Unknown", "Greece", "Java", "America", "Siberia", "Comet"];
+
+// State.
+let tiles = null;                  // Uint16Array(W*H) when loaded
+let levelNum = 0;
+let sourceName = null;             // filename of currently-loaded json
+let dirty = false;
+let history = [];                  // stack of Uint16Array snapshots for undo
+const HISTORY_MAX = 20;
+// Shield-wall data straight from the in-game JSON (optional — older
+// exports lack these fields). Walls is an array of up to 6 entries
+// per level; portals is up to 8 gate positions.
+let shieldWalls = null;            // array of {min_x, min_z, max_x, max_z, gate1{x0,z0,x1,z1}, gate2{...}}
+let shieldPortals = null;          // array of {x, y, z, state, type, ...}
+
+// Entity overlay — loaded separately from a BHENTITIES JSON file.
+// All four arrays are world-coord lists; the renderer converts to
+// tile space via `tile = world/256 + 128`. Held entirely in JS
+// memory, never written back to the game.
+let entitiesData = null;           // {level, level_name, buildings, vehicles, aliens, save_beacons, slot_summary}
+
+// UI elements.
+const $ = id => document.getElementById(id);
+const cv = $("cv");
+const ovr = $("overlay");
+const ctx = cv.getContext("2d");
+const octx = ovr.getContext("2d");
+ctx.imageSmoothingEnabled = false;
+octx.imageSmoothingEnabled = false;
+
+// ---------- Color palettes ----------------------------------------------------
+
+// Terrain palette: blue water at 0, greens climbing through yellows to
+// snow-white peaks. Matches how BH's own minimap colors elevation.
+function paletteTerrain(h) {
+  if (h === 0)      return [42, 95, 165];      // sea blue
+  if (h <= 2)       return [60, 130, 180];     // shore
+  if (h <= 6)       return [90, 160, 90];      // grass low
+  if (h <= 16)      return [70, 140, 60];      // grass
+  if (h <= 28)      return [110, 150, 50];     // hill
+  if (h <= 40)      return [150, 130, 60];     // brown
+  if (h <= 52)      return [170, 130, 90];     // mountain
+  if (h <= 60)      return [200, 200, 200];    // rock
+  return [240, 240, 250];                       // snow peak
+}
+function paletteGray(h) {
+  const v = Math.round((h / 63) * 255);
+  return [v, v, v];
+}
+function paletteContour(h) {
+  // Repeating bands every 8 height units for clear contour lines.
+  const band = Math.floor(h / 8) & 7;
+  const ramps = [
+    [40, 60, 100], [60, 100, 140], [80, 140, 100], [120, 160, 60],
+    [180, 160, 60], [180, 110, 60], [200, 200, 200], [255, 255, 255]
+  ];
+  return ramps[band];
+}
+function paletteState(tile) {
+  // Greyscale base from height, then tint state bits red.
+  const h = tile & 0x3F;
+  const v = Math.round((h / 63) * 180) + 30;
+  const state = (tile >> 6) & 0xF;
+  if (state === 0) return [v, v, v];
+  // Common state flags get distinct hues.
+  if (state & 0x8) return [200, 60, 60];   // pit (Java)
+  if (state & 0x4) return [60, 200, 200];  // water marker
+  if (state & 0x2) return [200, 200, 60];  // walkable type
+  return [180, 100, 200];                  // other
+}
+function paletteTexture(tile) {
+  // Hue from texture bits, value from height.
+  const h = tile & 0x3F;
+  const tex = (tile >> 10) & 0x3F;
+  const v = Math.round((h / 63) * 60) + 80;
+  // Cycle hue evenly across the 64 texture indices.
+  const hue = (tex / 64) * 360;
+  return hslToRgb(hue, 0.55, v / 255);
+}
+function hslToRgb(h, s, l) {
+  h = ((h % 360) + 360) % 360;
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = l - c / 2;
+  let r=0, g=0, b=0;
+  if (h <  60) { r=c; g=x; }
+  else if (h < 120) { r=x; g=c; }
+  else if (h < 180) { g=c; b=x; }
+  else if (h < 240) { g=x; b=c; }
+  else if (h < 300) { r=x; b=c; }
+  else              { r=c; b=x; }
+  return [Math.round((r+m)*255), Math.round((g+m)*255), Math.round((b+m)*255)];
+}
+
+function tileColor(tile, mode) {
+  const h = tile & 0x3F;
+  switch (mode) {
+    case "gray":     return paletteGray(h);
+    case "contour":  return paletteContour(h);
+    case "state":    return paletteState(tile);
+    case "texture":  return paletteTexture(tile);
+    case "terrain":
+    default:         return paletteTerrain(h);
+  }
+}
+
+// ---------- Render ------------------------------------------------------------
+
+function render() {
+  if (!tiles) return;
+  const mode = $("palette").value;
+  const img = ctx.createImageData(W, H);
+  const d = img.data;
+  for (let i = 0, p = 0; i < W * H; ++i, p += 4) {
+    const [r, g, b] = tileColor(tiles[i], mode);
+    d[p] = r; d[p+1] = g; d[p+2] = b; d[p+3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  renderOverlay();
+}
+
+// Coordinate conversions for shield data — calibrated from a Greece
+// export (wall 3's central rectangle had values (-6656, -6656, 6656,
+// 6656) which is the diamond-shape central island shield).
+//
+// Wall struct coords (Unk8014FD30Type fields, signed s16):
+//   Stored as world units directly. World origin is at tile
+//   (128,128); 1 tile = 256 world units. So:
+//       tile = (wall_value / 256) + 128
+//   The collision code's `>> 10` is an arithmetic shift used to
+//   convert the s16 world coord to a signed grid index in the
+//   range -32..+31 over a 64x64 helper grid (D_8021EA30); the
+//   +0x820 array offset re-centers it.
+//
+// Gate (D_8003E0FC GateEntry, X and Z compressed, Y raw):
+//   Field 0 = world_X / 256 (stored compressed; game multiplies
+//             by 256 with `<< 8` to compare against world X).
+//   Field 2 = world Y (vertical, raw — no scaling).
+//   Field 4 = world_Z / 256 (compressed).
+//   So tile = stored_value + 128 (no division — already pre-shifted).
+//   The decomp's struct comments label these wrong (says 0,2,4 =
+//   X,Z,Y); the actual game-code usage in func_800BD688_CC638
+//   shows it's 0,2,4 = X,Y,Z. We use the corrected labels.
+function wallToTile(v)     { return (v / 256) + 128; }
+function gateXZToTile(v)   { return v + 128; }
+
+function renderOverlay() {
+  octx.clearRect(0, 0, W, H);
+  // 8x8 map cell grid (32 tiles per cell). Matches BH's in-game map's
+  // A-H rows / 1-8 columns overlay.
+  if ($("grid").checked) {
+    octx.save();
+    octx.strokeStyle = "rgba(255, 80, 80, 0.5)";
+    octx.lineWidth = 1;
+    for (let i = 0; i <= 8; ++i) {
+      const p = i * 32 + 0.5;
+      octx.beginPath();
+      octx.moveTo(p, 0); octx.lineTo(p, H); octx.stroke();
+      octx.beginPath();
+      octx.moveTo(0, p); octx.lineTo(W, p); octx.stroke();
+    }
+    octx.fillStyle = "rgba(255, 120, 120, 0.7)";
+    octx.font = "bold 9px monospace";
+    octx.textBaseline = "top";
+    for (let col = 0; col < 8; ++col) {
+      octx.fillText(String(col + 1), col * 32 + 3, 1);
+    }
+    for (let row = 0; row < 8; ++row) {
+      octx.fillText("ABCDEFGH"[row], 1, row * 32 + 2);
+    }
+    octx.restore();
+  }
+
+  // Shield walls: red bbox outline. A wall whose bbox is all-zero
+  // (or has zero area) is inactive — skip it.
+  if (shieldWalls && $("show-walls").checked) {
+    octx.save();
+    octx.strokeStyle = "rgba(255, 220, 30, 0.95)";
+    octx.lineWidth = 1;
+    octx.font = "bold 9px monospace";
+    octx.fillStyle = "rgba(255, 220, 30, 0.95)";
+    octx.textBaseline = "top";
+    for (let i = 0; i < shieldWalls.length; ++i) {
+      const w = shieldWalls[i];
+      const x0 = wallToTile(w.min_x);
+      const z0 = wallToTile(w.min_z);
+      const x1 = wallToTile(w.max_x);
+      const z1 = wallToTile(w.max_z);
+      const dx = x1 - x0, dz = z1 - z0;
+      if (dx <= 0 || dz <= 0) continue;          // inactive / zeroed
+      if (x1 < 0 || z1 < 0 || x0 > 256 || z0 > 256) continue; // off-map
+      octx.strokeRect(x0 + 0.5, z0 + 0.5, dx, dz);
+      // Wall index label in the top-left corner of the bbox.
+      octx.fillText("W" + i, x0 + 2, z0 + 1);
+
+      // Gate openings inside this wall: draw cyan rectangles where
+      // the wall has a notch (gate). Each wall has two gate slots
+      // (gate1, gate2) — many walls use only one.
+      if ($("show-gates-in-walls").checked) {
+        for (const g of [w.gate1, w.gate2]) {
+          if (!g) continue;
+          const gx0 = wallToTile(g.x0), gz0 = wallToTile(g.z0);
+          const gx1 = wallToTile(g.x1), gz1 = wallToTile(g.z1);
+          if (gx1 - gx0 <= 0 || gz1 - gz0 <= 0) continue;
+          octx.save();
+          octx.strokeStyle = "rgba(80, 220, 255, 0.95)";
+          octx.fillStyle   = "rgba(80, 220, 255, 0.22)";
+          octx.lineWidth = 1;
+          octx.fillRect(gx0 + 0.5, gz0 + 0.5, gx1 - gx0, gz1 - gz0);
+          octx.strokeRect(gx0 + 0.5, gz0 + 0.5, gx1 - gx0, gz1 - gz0);
+          octx.restore();
+        }
+      }
+    }
+    octx.restore();
+  }
+
+  // Shield portals (GateEntry positions). p.x and p.z are stored
+  // compressed (world / 256), p.y is raw vertical. Drawn as diamond
+  // markers; color reflects open/closed state (state 0x50 = fully open).
+  if (shieldPortals && $("show-portals").checked) {
+    octx.save();
+    octx.font = "bold 9px monospace";
+    octx.textBaseline = "top";
+    for (let i = 0; i < shieldPortals.length; ++i) {
+      const p = shieldPortals[i];
+      // Inactive slots in BH are all-zero (the slot wasn't placed by
+      // the level designer). Detect by "all coords + type byte zero"
+      // — type byte is the most reliable "this slot is used" flag.
+      if (p.x === 0 && p.y === 0 && p.z === 0 && p.type === 0) continue;
+      const tx = gateXZToTile(p.x);
+      const tz = gateXZToTile(p.z);
+      if (tx < 0 || tx > 256 || tz < 0 || tz > 256) continue;
+      const stateVal = p.state | 0;
+      // BH animates gate open-state from 0 (closed) up to 0x50 (80,
+      // fully open). Anything > 0 is opening/open; we show open as
+      // green, closed as magenta.
+      const fullyOpen = stateVal >= 0x50;
+      const opening   = stateVal > 0 && stateVal < 0x50;
+      const color = fullyOpen ? "rgba(120, 255, 120, 0.95)"
+                  : opening   ? "rgba(255, 220, 80, 0.95)"
+                              : "rgba(255, 120, 255, 0.95)";
+      octx.save();
+      octx.translate(tx, tz);
+      octx.rotate(Math.PI / 4);
+      octx.fillStyle = color;
+      octx.fillRect(-3, -3, 6, 6);
+      octx.strokeStyle = "rgba(0, 0, 0, 0.9)";
+      octx.lineWidth = 1;
+      octx.strokeRect(-3, -3, 6, 6);
+      octx.restore();
+      octx.fillStyle = color;
+      octx.fillText("G" + i, tx + 5, tz - 2);
+    }
+    octx.restore();
+  }
+
+  // ---- Entity overlays (buildings, vehicles, aliens, beacons) ----
+  // All four use world-coord positions where 1 tile = 256 world units
+  // and world origin = tile (128, 128).
+  if (entitiesData) {
+    const worldToCanvas = (w) => (w / 256) + 128;
+
+    // Buildings — orange squares. State 2 (destroyed) renders dimmer.
+    if ($("show-buildings").checked && Array.isArray(entitiesData.buildings)) {
+      octx.save();
+      for (const b of entitiesData.buildings) {
+        const tx = worldToCanvas(b.x);
+        const tz = worldToCanvas(b.z);
+        if (tx < -2 || tx > 258 || tz < -2 || tz > 258) continue;
+        const destroyed = b.hp === 0;
+        octx.fillStyle   = destroyed ? "rgba(180, 100, 40, 0.6)"
+                                     : "rgba(255, 165, 30, 0.95)";
+        octx.strokeStyle = "rgba(0, 0, 0, 0.9)";
+        octx.lineWidth = 0.5;
+        octx.fillRect(tx - 1.5, tz - 1.5, 3, 3);
+        octx.strokeRect(tx - 1.5, tz - 1.5, 3, 3);
+      }
+      octx.restore();
+    }
+
+    // Vehicles — cyan triangles pointing in the yaw direction.
+    if ($("show-vehicles").checked && Array.isArray(entitiesData.vehicles)) {
+      octx.save();
+      for (const v of entitiesData.vehicles) {
+        const tx = worldToCanvas(v.x);
+        const tz = worldToCanvas(v.z);
+        if (tx < -2 || tx > 258 || tz < -2 || tz > 258) continue;
+        // Slot 0 is the player vehicle ("Alpha 1"). Highlight it.
+        const isPlayer = (v.slot === 0);
+        const color = isPlayer ? "rgba(255, 255, 255, 1.0)"
+                               : "rgba(80, 200, 255, 0.95)";
+        // BH yaw: 0x10000 = 360°. Convert to radians and rotate
+        // canvas Y down to game Z forward.
+        const yawRad = (v.yaw / 0x10000) * Math.PI * 2;
+        octx.save();
+        octx.translate(tx, tz);
+        octx.rotate(yawRad);
+        octx.fillStyle = color;
+        octx.beginPath();
+        octx.moveTo(0, -3);
+        octx.lineTo(2, 2);
+        octx.lineTo(-2, 2);
+        octx.closePath();
+        octx.fill();
+        octx.strokeStyle = "rgba(0, 0, 0, 0.9)";
+        octx.lineWidth = 0.5;
+        octx.stroke();
+        octx.restore();
+      }
+      octx.restore();
+    }
+
+    // Aliens — red dots.
+    if ($("show-aliens").checked && Array.isArray(entitiesData.aliens)) {
+      octx.save();
+      octx.fillStyle = "rgba(255, 60, 60, 0.95)";
+      octx.strokeStyle = "rgba(0, 0, 0, 0.9)";
+      octx.lineWidth = 0.5;
+      for (const a of entitiesData.aliens) {
+        const tx = worldToCanvas(a.x);
+        const tz = worldToCanvas(a.z);
+        if (tx < -2 || tx > 258 || tz < -2 || tz > 258) continue;
+        octx.beginPath();
+        octx.arc(tx, tz, 1.6, 0, Math.PI * 2);
+        octx.fill();
+        octx.stroke();
+      }
+      octx.restore();
+    }
+
+    // Save beacons — yellow + crosses. Position comes from the
+    // exporter's `resolved_x` / `resolved_z` (the building this beacon
+    // points to). For beacons that belong to other levels, or whose
+    // building slot couldn't be resolved, resolved_x is null and we
+    // skip rendering. The active save slot gets a ring.
+    if ($("show-beacons").checked && Array.isArray(entitiesData.save_beacons)) {
+      octx.save();
+      for (const sb of entitiesData.save_beacons) {
+        if (sb.resolved_x == null || sb.resolved_z == null) continue;
+        const tx = worldToCanvas(sb.resolved_x);
+        const tz = worldToCanvas(sb.resolved_z);
+        if (tx < -2 || tx > 258 || tz < -2 || tz > 258) continue;
+        const active = !!sb.is_active_save;
+        octx.strokeStyle = active ? "rgba(255, 255, 80, 1.0)"
+                                  : "rgba(220, 200, 60, 0.9)";
+        octx.lineWidth = active ? 1.5 : 1;
+        octx.beginPath();
+        octx.moveTo(tx - 3, tz);
+        octx.lineTo(tx + 3, tz);
+        octx.moveTo(tx, tz - 3);
+        octx.lineTo(tx, tz + 3);
+        octx.stroke();
+        if (active) {
+          // Outline ring to mark the slot the game would respawn at.
+          octx.beginPath();
+          octx.arc(tx, tz, 4, 0, Math.PI * 2);
+          octx.stroke();
+        }
+      }
+      octx.restore();
+    }
+  }
+}
+
+function applyZoom() {
+  const z = parseInt($("zoom").value, 10);
+  const px = W * z;
+  cv.style.width = ovr.style.width = px + "px";
+  cv.style.height = ovr.style.height = px + "px";
+  $("zoom-label").textContent = z + "x";
+}
+
+// ---------- File I/O ----------------------------------------------------------
+
+function readFileText(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result);
+    r.onerror = () => rej(r.error);
+    r.readAsText(file);
+  });
+}
+function readFileImage(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => {
+      const img = new Image();
+      img.onload = () => res(img);
+      img.onerror = () => rej(new Error("Image decode failed"));
+      img.src = r.result;
+    };
+    r.onerror = () => rej(r.error);
+    r.readAsDataURL(file);
+  });
+}
+
+async function loadJson(file) {
+  try {
+    const text = await readFileText(file);
+    const obj = JSON.parse(text);
+    if (obj.magic !== MAGIC) throw new Error("Not a BHTERRAIN file (magic mismatch).");
+    if (obj.version !== VERSION) throw new Error(`Unsupported version: ${obj.version}`);
+    if (obj.width !== W || obj.height !== H) throw new Error(`Bad dimensions: ${obj.width}x${obj.height}`);
+    if (typeof obj.tiles_hex !== "string" || obj.tiles_hex.length !== W * H * 4) {
+      throw new Error(`tiles_hex has wrong length: ${obj.tiles_hex ? obj.tiles_hex.length : "missing"}`);
+    }
+    const t = new Uint16Array(W * H);
+    for (let i = 0; i < W * H; ++i) {
+      const v = parseInt(obj.tiles_hex.substr(i * 4, 4), 16);
+      if (Number.isNaN(v)) throw new Error(`Bad hex at tile ${i}`);
+      t[i] = v;
+    }
+    tiles = t;
+    levelNum = obj.level | 0;
+    sourceName = file.name;
+    dirty = false;
+    history = [];
+    // Optional shield data (only present in exports from bh_app post the
+    // shield-overlay feature; older JSONs just don't have these keys).
+    shieldWalls   = Array.isArray(obj.shield_walls)  ? obj.shield_walls  : null;
+    shieldPortals = Array.isArray(obj.shield_gates)  ? obj.shield_gates  : null;
+    // Debug dump to the browser console so we can see what raw values
+    // came back and calibrate the wall/portal coordinate conversion.
+    if (shieldWalls) {
+      console.log(`[BH editor] Loaded ${shieldWalls.length} shield walls for level ${levelNum}:`);
+      shieldWalls.forEach((w, i) => {
+        console.log(`  wall ${i}: bbox=(${w.min_x}, ${w.min_z}) -> (${w.max_x}, ${w.max_z})`,
+                    `gate1=(${w.gate1.x0},${w.gate1.z0})-(${w.gate1.x1},${w.gate1.z1})`,
+                    `gate2=(${w.gate2.x0},${w.gate2.z0})-(${w.gate2.x1},${w.gate2.z1})`);
+      });
+    }
+    if (shieldPortals) {
+      console.log(`[BH editor] Loaded ${shieldPortals.length} shield portals for level ${levelNum}:`);
+      shieldPortals.forEach((p, i) => {
+        console.log(`  portal ${i}: world=(${p.x}, ${p.y}, ${p.z})  state=${p.state}  unk7=${p.unk7}  unk8=${p.unk8}  type=${p.type}`);
+      });
+    }
+    $("canvas-wrap").classList.add("ready");
+    $("drop-hint").style.display = "none";
+    $("json-save").disabled = false;
+    $("png-export").disabled = false;
+    updateMeta();
+    applyZoom();
+    render();
+    setStatus(`Loaded ${file.name} (level ${levelNum} ${LEVEL_NAMES[levelNum] || "Unknown"})`, "ok");
+  } catch (e) {
+    setStatus(`Load failed: ${e.message}`, "err");
+  }
+}
+
+async function loadEntities(file) {
+  try {
+    const text = await readFileText(file);
+    const obj = JSON.parse(text);
+    if (obj.magic !== "BHENTITIES") {
+      throw new Error("Not a BHENTITIES file (magic mismatch).");
+    }
+    // Soft warning if entity-file level doesn't match the loaded
+    // terrain — we still render, but markers are positioned in the
+    // entity-file's level's world space.
+    if (tiles && levelNum && obj.level && obj.level !== levelNum) {
+      setStatus(
+        `Entity file is for level ${obj.level} (${obj.level_name || "?"}), ` +
+        `terrain is level ${levelNum}. Overlay may not match.`,
+        "warn");
+    } else {
+      const sum = obj.slot_summary || {};
+      setStatus(
+        `Loaded entities for level ${obj.level} (${obj.level_name || "?"}): ` +
+        `${(obj.buildings || []).length} buildings, ` +
+        `${(obj.vehicles || []).length} vehicles, ` +
+        `${(obj.aliens || []).length} aliens, ` +
+        `${(obj.save_beacons || []).length} beacons.`,
+        "ok");
+    }
+    entitiesData = obj;
+    $("entities-clear").disabled = false;
+    updateMeta();
+    renderOverlay();
+    console.log("[BH editor] Entity payload:", obj);
+  } catch (e) {
+    setStatus(`Entity load failed: ${e.message}`, "err");
+  }
+}
+
+function clearEntities() {
+  entitiesData = null;
+  $("entities-clear").disabled = true;
+  updateMeta();
+  renderOverlay();
+  setStatus("Entity overlay cleared.", "ok");
+}
+
+async function loadPng(file) {
+  if (!tiles) {
+    // Create a fresh terrain at level 0 (Unknown) so the user can
+    // start from a raw PNG.
+    tiles = new Uint16Array(W * H);
+    levelNum = 0;
+    sourceName = null;
+    $("canvas-wrap").classList.add("ready");
+    $("drop-hint").style.display = "none";
+    $("json-save").disabled = false;
+    $("png-export").disabled = false;
+  }
+  try {
+    snapshot();
+    const img = await readFileImage(file);
+    // Resize via offscreen canvas to W*H (nearest-neighbor for chunky
+    // heightmap feel; switch to smoothing later if we want).
+    const tmp = document.createElement("canvas");
+    tmp.width = W; tmp.height = H;
+    const tctx = tmp.getContext("2d");
+    tctx.imageSmoothingEnabled = (img.width !== W || img.height !== H);
+    tctx.imageSmoothingQuality = "high";
+    tctx.drawImage(img, 0, 0, W, H);
+    const data = tctx.getImageData(0, 0, W, H).data;
+    for (let i = 0, p = 0; i < W * H; ++i, p += 4) {
+      // Grayscale (luminance). Black=0 (sea), white=63 (peak).
+      const lum = 0.299 * data[p] + 0.587 * data[p+1] + 0.114 * data[p+2];
+      const h = Math.max(0, Math.min(63, Math.round((lum / 255) * 63)));
+      // Preserve existing state + texture bits if any.
+      tiles[i] = (tiles[i] & 0xFFC0) | h;
+    }
+    markDirty();
+    updateMeta();
+    applyZoom();
+    render();
+    setStatus(`Imported ${file.name} as heightmap (${img.width}x${img.height} -> 256x256)`, "ok");
+  } catch (e) {
+    setStatus(`PNG import failed: ${e.message}`, "err");
+  }
+}
+
+function saveJson() {
+  if (!tiles) return;
+  let hex = "";
+  for (let i = 0; i < W * H; ++i) {
+    hex += tiles[i].toString(16).padStart(4, "0");
+  }
+  const obj = {
+    magic: MAGIC,
+    version: VERSION,
+    level: levelNum,
+    level_name: LEVEL_NAMES[levelNum] || "Unknown",
+    width: W,
+    height: H,
+    tiles_hex: hex,
+  };
+  // Match the on-game writer's pretty-print format (1 field per line).
+  // Preserve shield data verbatim so the file remains complete on
+  // round-trip; the editor doesn't modify wall/gate fields, so we
+  // just re-emit what we loaded.
+  let body =
+    "{\n" +
+    `  "magic": ${JSON.stringify(obj.magic)},\n` +
+    `  "version": ${obj.version},\n` +
+    `  "level": ${obj.level},\n` +
+    `  "level_name": ${JSON.stringify(obj.level_name)},\n` +
+    `  "width": ${obj.width},\n` +
+    `  "height": ${obj.height},\n` +
+    `  "tiles_hex": ${JSON.stringify(obj.tiles_hex)}`;
+  if (shieldWalls) {
+    body += ",\n  \"shield_walls\": " + JSON.stringify(shieldWalls);
+  }
+  if (shieldPortals) {
+    body += ",\n  \"shield_gates\": " + JSON.stringify(shieldPortals);
+  }
+  body += "\n}\n";
+  const blob = new Blob([body], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const stem = sourceName ? sourceName.replace(/\.json$/i, "") : `terrain_${levelNum}_${LEVEL_NAMES[levelNum] || "edited"}`;
+  a.href = url;
+  a.download = stem + "_edited.json";
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
+  dirty = false;
+  updateMeta();
+  setStatus(`Saved as ${a.download}`, "ok");
+}
+
+function exportPng() {
+  if (!tiles) return;
+  const tmp = document.createElement("canvas");
+  tmp.width = W; tmp.height = H;
+  const tctx = tmp.getContext("2d");
+  const img = tctx.createImageData(W, H);
+  const d = img.data;
+  for (let i = 0, p = 0; i < W * H; ++i, p += 4) {
+    const h = tiles[i] & 0x3F;
+    // Map 0..63 to 0..255 linearly so external editors see good range.
+    const v = Math.round((h / 63) * 255);
+    d[p] = d[p+1] = d[p+2] = v; d[p+3] = 255;
+  }
+  tctx.putImageData(img, 0, 0);
+  tmp.toBlob((blob) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const stem = sourceName ? sourceName.replace(/\.json$/i, "") : `terrain_${levelNum}_${LEVEL_NAMES[levelNum] || "edited"}`;
+    a.href = url;
+    a.download = stem + "_height.png";
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
+    setStatus(`Exported heightmap PNG (${a.download})`, "ok");
+  });
+}
+
+function newFlat() {
+  tiles = new Uint16Array(W * H);
+  levelNum = 1;
+  sourceName = null;
+  dirty = true;
+  history = [];
+  $("canvas-wrap").classList.add("ready");
+  $("drop-hint").style.display = "none";
+  $("json-save").disabled = false;
+  $("png-export").disabled = false;
+  updateMeta();
+  applyZoom();
+  render();
+  setStatus("Created new flat terrain (level 1 / Greece — change in JSON to retarget)", "ok");
+}
+
+// ---------- Editing -----------------------------------------------------------
+
+function snapshot() {
+  if (!tiles) return;
+  history.push(new Uint16Array(tiles));
+  if (history.length > HISTORY_MAX) history.shift();
+}
+function undo() {
+  if (!history.length) {
+    setStatus("Nothing to undo.", "warn");
+    return;
+  }
+  tiles = history.pop();
+  markDirty();
+  render();
+  setStatus(`Undo. ${history.length} step(s) remaining.`, "ok");
+}
+
+function markDirty() {
+  dirty = true;
+  updateMeta();
+}
+
+function paintAt(cx, cz, applyFn) {
+  const r = parseInt($("brush-size").value, 10);
+  for (let dz = -r; dz <= r; ++dz) {
+    for (let dx = -r; dx <= r; ++dx) {
+      if (dx*dx + dz*dz > r*r) continue;
+      const x = cx + dx, z = cz + dz;
+      if (x < 0 || x >= W || z < 0 || z >= H) continue;
+      const i = z * W + x;
+      tiles[i] = applyFn(tiles[i], x, z);
+    }
+  }
+}
+
+function applyTool(tx, tz, sample = false) {
+  if (!tiles) return;
+  const tool = $("tool").value;
+  if (sample || tool === "sample") {
+    if (tx < 0 || tx >= W || tz < 0 || tz >= H) return;
+    const tile = tiles[tz * W + tx];
+    const h = tile & 0x3F;
+    $("brush-h").value = h;
+    $("brush-h-slider").value = h;
+    setStatus(`Sampled height ${h} at (${tx},${tz})`, "ok");
+    return;
+  }
+  const h = parseInt($("brush-h").value, 10) | 0;
+  switch (tool) {
+    case "paint":
+      paintAt(tx, tz, (t) => (t & 0xFFC0) | (h & 0x3F));
+      break;
+    case "raise":
+      paintAt(tx, tz, (t) => {
+        const cur = t & 0x3F;
+        return (t & 0xFFC0) | Math.min(63, cur + 1);
+      });
+      break;
+    case "lower":
+      paintAt(tx, tz, (t) => {
+        const cur = t & 0x3F;
+        return (t & 0xFFC0) | Math.max(0, cur - 1);
+      });
+      break;
+    case "smooth": {
+      // Two-pass for the brush area: snapshot, average from snapshot.
+      const r = parseInt($("brush-size").value, 10);
+      const span = (r + 1) * 2 + 1;
+      const snap = new Int16Array(span * span);
+      const lo = -(r + 1), hi = r + 1;
+      for (let dz = lo; dz <= hi; ++dz) {
+        for (let dx = lo; dx <= hi; ++dx) {
+          const x = tx + dx, z = tz + dz;
+          snap[(dz - lo) * span + (dx - lo)] =
+            (x < 0 || x >= W || z < 0 || z >= H)
+              ? -1 : (tiles[z * W + x] & 0x3F);
+        }
+      }
+      paintAt(tx, tz, (t, x, z) => {
+        const dxc = x - tx, dzc = z - tz;
+        let sum = 0, n = 0;
+        for (let oz = -1; oz <= 1; ++oz) {
+          for (let ox = -1; ox <= 1; ++ox) {
+            const v = snap[(dzc + oz - lo) * span + (dxc + ox - lo)];
+            if (v < 0) continue;
+            sum += v; n += 1;
+          }
+        }
+        if (n === 0) return t;
+        return (t & 0xFFC0) | Math.round(sum / n);
+      });
+      break;
+    }
+  }
+  markDirty();
+  render();
+}
+
+function bulkSmooth() {
+  if (!tiles) return;
+  snapshot();
+  const orig = new Uint16Array(tiles);
+  for (let z = 0; z < H; ++z) {
+    for (let x = 0; x < W; ++x) {
+      let sum = 0, n = 0;
+      for (let oz = -1; oz <= 1; ++oz) {
+        for (let ox = -1; ox <= 1; ++ox) {
+          const nx = x + ox, nz = z + oz;
+          if (nx < 0 || nx >= W || nz < 0 || nz >= H) continue;
+          sum += orig[nz * W + nx] & 0x3F;
+          n += 1;
+        }
+      }
+      const avg = Math.round(sum / n);
+      const i = z * W + x;
+      tiles[i] = (orig[i] & 0xFFC0) | avg;
+    }
+  }
+  markDirty();
+  render();
+  setStatus("Smoothed entire terrain.", "ok");
+}
+
+function bulkFlatten() {
+  if (!tiles) return;
+  snapshot();
+  const h = parseInt($("brush-h").value, 10) | 0;
+  for (let i = 0; i < W * H; ++i) {
+    tiles[i] = (tiles[i] & 0xFFC0) | (h & 0x3F);
+  }
+  markDirty();
+  render();
+  setStatus(`Flattened entire terrain to height ${h}.`, "ok");
+}
+
+// ---------- UI wiring ---------------------------------------------------------
+
+function setStatus(msg, cls = "") {
+  const el = $("status");
+  el.textContent = msg;
+  el.className = "msg " + cls;
+}
+
+function updateMeta() {
+  const name = LEVEL_NAMES[levelNum] || "Unknown";
+  const src = sourceName ? sourceName : "(unsaved)";
+  // Count active walls (bbox with nonzero area) and active portals
+  // (non-default-zero gate slots) so the user can see at a glance
+  // whether the loaded file includes shield data.
+  let activeWalls = 0;
+  if (shieldWalls) {
+    for (const w of shieldWalls) {
+      if ((w.max_x - w.min_x) > 0 && (w.max_z - w.min_z) > 0) ++activeWalls;
+    }
+  }
+  let activePortals = 0;
+  if (shieldPortals) {
+    for (const p of shieldPortals) {
+      if (!(p.x === 0 && p.z === 0 && p.y === 0 && p.type === 0)) ++activePortals;
+    }
+  }
+  const shieldPart = (shieldWalls || shieldPortals)
+    ? `  ·  shields: ${activeWalls}/${shieldWalls ? shieldWalls.length : 0} walls, ` +
+      `${activePortals}/${shieldPortals ? shieldPortals.length : 0} gates`
+    : `  ·  (no shield data in file)`;
+  let entityPart = "";
+  if (entitiesData) {
+    const summary = entitiesData.slot_summary || {};
+    const bs = entitiesData.buildings    || [];
+    const vs = entitiesData.vehicles     || [];
+    const as = entitiesData.aliens       || [];
+    const ss = entitiesData.save_beacons || [];
+    entityPart =
+      `  ·  entities lvl ${entitiesData.level}: ` +
+      `${bs.length}b / ${vs.length}v / ${as.length}a / ${ss.length}sb`;
+  }
+  $("meta").textContent =
+    `Level ${levelNum} (${name})  ·  ${W}×${H}  ·  ${src}${shieldPart}${entityPart}${dirty ? "  ·  modified" : ""}`;
+  $("dirty").textContent = dirty ? "● unsaved changes" : "";
+  $("dirty").style.color = dirty ? "var(--warn)" : "var(--fg-dim)";
+}
+
+function canvasToTile(ev) {
+  const rect = cv.getBoundingClientRect();
+  const z = parseInt($("zoom").value, 10);
+  const tx = Math.floor((ev.clientX - rect.left) / z);
+  const tz = Math.floor((ev.clientY - rect.top) / z);
+  return { tx, tz };
+}
+
+let painting = false;
+function attachCanvasEvents() {
+  ovr.style.pointerEvents = "auto";
+  ovr.addEventListener("contextmenu", e => e.preventDefault());
+  ovr.addEventListener("mousedown", (e) => {
+    if (!tiles) return;
+    e.preventDefault();
+    const { tx, tz } = canvasToTile(e);
+    if (tx < 0 || tx >= W || tz < 0 || tz >= H) return;
+    if (e.button === 2) {
+      applyTool(tx, tz, true);
+      return;
+    }
+    snapshot();
+    painting = true;
+    applyTool(tx, tz);
+  });
+  ovr.addEventListener("mousemove", (e) => {
+    if (!tiles) return;
+    const { tx, tz } = canvasToTile(e);
+    if (tx >= 0 && tx < W && tz >= 0 && tz < H) {
+      const tile = tiles[tz * W + tx];
+      const h     = tile & 0x3F;
+      const state = (tile >> 6) & 0xF;
+      const tex   = (tile >> 10) & 0x3F;
+      // BH map cells: 8x8 grid, A-H rows, 1-8 cols, 32 tiles each.
+      const col = Math.floor(tx / 32) + 1;
+      const row = "ABCDEFGH"[Math.floor(tz / 32)] || "?";
+      // BH world coords: origin (0,0) is tile (128,128); 1 tile = 256 world units.
+      const wx = (tx - 128) * 256;
+      const wz = (tz - 128) * 256;
+      // Look for nearby entities within ~3 tiles of the cursor.
+      let nearbyInfo = "";
+      if (entitiesData) {
+        const tNear = 3;
+        const near = [];
+        const collect = (list, kind, mark, xKey, zKey, extraSkip) => {
+          if (!list) return;
+          for (const it of list) {
+            const ix = it[xKey], iz = it[zKey];
+            if (ix == null || iz == null) continue;
+            if (extraSkip && extraSkip(it)) continue;
+            const itx = (ix / 256) + 128;
+            const itz = (iz / 256) + 128;
+            if (Math.abs(itx - tx) <= tNear && Math.abs(itz - tz) <= tNear) {
+              near.push(`${mark} ${kind} slot ${it.slot}` +
+                        (it.spec !== undefined ? ` spec ${it.spec}` : "") +
+                        (it.type !== undefined && kind === "Building"
+                            ? ` type ${it.type}` : "") +
+                        (kind === "Beacon" && it.is_active_save ? " [ACTIVE]" : ""));
+            }
+          }
+        };
+        // Buildings/vehicles/aliens: position in raw x/z fields.
+        collect(entitiesData.buildings, "Building", "▪", "x", "z",
+                (b) => b.type === 0);
+        collect(entitiesData.vehicles,  "Vehicle",  "▲", "x", "z");
+        collect(entitiesData.aliens,    "Alien",    "●", "x", "z");
+        // Beacons: position lives in resolved_x/resolved_z (looked up
+        // via building slot at export time). Beacons for other levels
+        // have null coords.
+        collect(entitiesData.save_beacons, "Beacon", "✚",
+                "resolved_x", "resolved_z");
+        if (near.length) {
+          nearbyInfo = "\n<b>Near</b>   " + near.join("\n        ");
+        }
+      }
+      $("cursor-info").innerHTML =
+        `<b>Tile</b>   (${tx}, ${tz})\n` +
+        `<b>Cell</b>   ${row}${col}\n` +
+        `<b>World</b>  X=${wx}, Z=${wz}\n` +
+        `<b>u16</b>    0x${tile.toString(16).padStart(4, "0")}\n` +
+        `<b>Height</b> ${h} / 63   (~Y=${h * 32})\n` +
+        `<b>State</b>  ${state}   <b>Tex</b> ${tex}` +
+        nearbyInfo;
+    }
+    if (painting && e.buttons & 1) {
+      if (tx >= 0 && tx < W && tz >= 0 && tz < H) {
+        applyTool(tx, tz);
+      }
+    }
+  });
+  ovr.addEventListener("mouseup", () => { painting = false; });
+  ovr.addEventListener("mouseleave", () => {
+    painting = false;
+    $("cursor-info").textContent = "(hover the canvas)";
+  });
+}
+
+function bindUi() {
+  $("json-load").addEventListener("change", e => {
+    if (e.target.files[0]) loadJson(e.target.files[0]);
+    e.target.value = ""; // allow re-loading same file
+  });
+  $("png-import").addEventListener("change", e => {
+    if (e.target.files[0]) loadPng(e.target.files[0]);
+    e.target.value = "";
+  });
+  $("json-save").addEventListener("click", saveJson);
+  $("png-export").addEventListener("click", exportPng);
+  $("new-flat").addEventListener("click", newFlat);
+  $("palette").addEventListener("change", render);
+  $("grid").addEventListener("change", renderOverlay);
+  $("show-walls").addEventListener("change", renderOverlay);
+  $("show-gates-in-walls").addEventListener("change", renderOverlay);
+  $("show-portals").addEventListener("change", renderOverlay);
+  $("show-buildings").addEventListener("change", renderOverlay);
+  $("show-vehicles").addEventListener("change", renderOverlay);
+  $("show-aliens").addEventListener("change", renderOverlay);
+  $("show-beacons").addEventListener("change", renderOverlay);
+  $("entities-load").addEventListener("change", e => {
+    if (e.target.files[0]) loadEntities(e.target.files[0]);
+    e.target.value = "";
+  });
+  $("entities-clear").addEventListener("click", clearEntities);
+  $("zoom").addEventListener("input", applyZoom);
+  $("brush-size").addEventListener("input", () => {
+    $("brush-size-label").textContent = $("brush-size").value;
+  });
+  // Keep number + slider for height in sync.
+  $("brush-h").addEventListener("input", () => {
+    const v = Math.max(0, Math.min(63, parseInt($("brush-h").value, 10) | 0));
+    $("brush-h").value = v;
+    $("brush-h-slider").value = v;
+  });
+  $("brush-h-slider").addEventListener("input", () => {
+    $("brush-h").value = $("brush-h-slider").value;
+  });
+  $("op-smooth").addEventListener("click", bulkSmooth);
+  $("op-undo").addEventListener("click", undo);
+  $("op-flatten").addEventListener("click", bulkFlatten);
+
+  // Keyboard shortcuts: Ctrl+Z = undo, Ctrl+S = save.
+  window.addEventListener("keydown", e => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+      e.preventDefault(); undo();
+    } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+      e.preventDefault(); if (tiles) saveJson();
+    }
+  });
+
+  // Drag-and-drop for both JSON and PNG.
+  let dragDepth = 0;
+  window.addEventListener("dragenter", e => {
+    e.preventDefault();
+    dragDepth++;
+    document.body.classList.add("drag-over");
+  });
+  window.addEventListener("dragleave", e => {
+    e.preventDefault();
+    dragDepth--;
+    if (dragDepth <= 0) {
+      dragDepth = 0;
+      document.body.classList.remove("drag-over");
+    }
+  });
+  window.addEventListener("dragover", e => e.preventDefault());
+  window.addEventListener("drop", e => {
+    e.preventDefault();
+    dragDepth = 0;
+    document.body.classList.remove("drag-over");
+    const f = e.dataTransfer.files[0];
+    if (!f) return;
+    if (/\.json$/i.test(f.name) || f.type === "application/json") {
+      // Peek first line to route between BHTERRAIN and BHENTITIES.
+      // We can't easily tell from the filename alone (both end in .json),
+      // so read a chunk and look for the magic string.
+      const sniff = new FileReader();
+      sniff.onload = () => {
+        const head = String(sniff.result || "");
+        if (head.includes('"BHENTITIES"')) {
+          loadEntities(f);
+        } else {
+          loadJson(f); // assume terrain
+        }
+      };
+      sniff.readAsText(f.slice(0, 200));
+    } else if (/\.(png|jpe?g|bmp|webp)$/i.test(f.name) ||
+               f.type.startsWith("image/")) {
+      loadPng(f);
+    } else {
+      setStatus(`Don't know how to load ${f.name}.`, "err");
+    }
+  });
+
+  // Warn before navigating away with unsaved changes.
+  window.addEventListener("beforeunload", e => {
+    if (dirty) {
+      e.preventDefault();
+      e.returnValue = "You have unsaved changes.";
+    }
+  });
+}
+
+bindUi();
+attachCanvasEvents();
+applyZoom();
+
+</script>
+</body>
+</html>
