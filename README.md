@@ -10,7 +10,7 @@ copy of the Body Harvest US ROM.
 ## What this is
 
 In Short: A very messy and cluttered project. It's not meant to be "THE" PC port, It's meant to give others a starting point. "My port walked so yours can run"
-It is accidentally the most accurate documentation due to trial and error.
+It is accidentally the most accurate documentation due to trial and error. also yes it's 99% AI written. It started as a benchmark and only took 14 hours to make it fully playable. as of right now, has used a context of over 4 million tokens. the model I use has a 1 million maximum, so when I reach the limit, I have it put all important data into a file, then I flush its contexts and make it read the file/start again. 
 
 Full:
 A research + tooling project built on top of
