@@ -67,7 +67,7 @@ On top of that base, this project adds:
   working executable.
 
 - **A decompilation** — see
-  [body-harvest-decompilation](https://github.com/) for that work. This
+  [body-harvest-decompilation](https://github.com/jaytheham/body-harvest-decompilation) for that work. This
   project consumes the decomp's findings as documentation, but the
   build pipeline is recompilation (N64Recomp), not decompilation. We're
   a downstream beneficiary, not a competitor.
